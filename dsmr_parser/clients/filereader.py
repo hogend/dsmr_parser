@@ -4,7 +4,6 @@ import tailer
 
 from dsmr_parser.clients.telegram_buffer import TelegramBuffer
 from dsmr_parser.exceptions import ParseError, InvalidChecksumError
-from dsmr_parser.objects import Telegram
 from dsmr_parser.parsers import TelegramParser
 
 logger = logging.getLogger(__name__)
@@ -64,14 +63,17 @@ class FileReader(object):
         with open(self._file, "rb") as file_handle:
             while True:
                 data = file_handle.readline()
-                str = data.decode()
-                self.telegram_buffer.append(str)
+
+                if not data:
+                    break
+
+                self.telegram_buffer.append(data.decode())
 
                 for telegram in self.telegram_buffer.get_all():
                     try:
-                        yield Telegram(telegram, self.telegram_parser, self.telegram_specification)
+                        yield self.telegram_parser.parse(telegram)
                     except InvalidChecksumError as e:
-                        logger.warning(str(e))
+                        logger.info(str(e))
                     except ParseError as e:
                         logger.error('Failed to parse telegram: %s', e)
 
@@ -118,7 +120,7 @@ class FileInputReader(object):
 
                 for telegram in self.telegram_buffer.get_all():
                     try:
-                        yield Telegram(telegram, self.telegram_parser, self.telegram_specification)
+                        yield self.telegram_parser.parse(telegram)
                     except InvalidChecksumError as e:
                         logger.warning(str(e))
                     except ParseError as e:
@@ -164,7 +166,7 @@ class FileTailReader(object):
 
                 for telegram in self.telegram_buffer.get_all():
                     try:
-                        yield Telegram(telegram, self.telegram_parser, self.telegram_specification)
+                        yield self.telegram_parser.parse(telegram)
                     except InvalidChecksumError as e:
                         logger.warning(str(e))
                     except ParseError as e:

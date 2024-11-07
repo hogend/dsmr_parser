@@ -4,7 +4,7 @@ from functools import partial
 import asyncio
 import logging
 
-from serial_asyncio import create_serial_connection
+from serial_asyncio_fast import create_serial_connection
 
 from dsmr_parser import telegram_specifications
 from dsmr_parser.clients.telegram_buffer import TelegramBuffer
@@ -15,6 +15,15 @@ from dsmr_parser.clients.settings import SERIAL_SETTINGS_V2_2, \
 
 
 def create_dsmr_protocol(dsmr_version, telegram_callback, loop=None, **kwargs):
+    """Creates a DSMR asyncio protocol."""
+    protocol = _create_dsmr_protocol(dsmr_version, telegram_callback,
+                                     DSMRProtocol, loop, **kwargs)
+    return protocol
+
+
+# pylama noqa - because of "complex" (too long) if-elif-else.
+# Match - case might be a solution but it is not available in <3.10
+def _create_dsmr_protocol(dsmr_version, telegram_callback, protocol, loop=None, **kwargs): #noqa
     """Creates a DSMR asyncio protocol."""
 
     if dsmr_version == '2.2':
@@ -41,11 +50,17 @@ def create_dsmr_protocol(dsmr_version, telegram_callback, loop=None, **kwargs):
     elif dsmr_version == "Q3D":
         specification = telegram_specifications.Q3D
         serial_settings = SERIAL_SETTINGS_V5
+    elif dsmr_version == 'ISKRA_IE':
+        specification = telegram_specifications.ISKRA_IE
+        serial_settings = SERIAL_SETTINGS_V5
+    elif dsmr_version == '5EONHU':
+        specification = telegram_specifications.EON_HUNGARY
+        serial_settings = SERIAL_SETTINGS_V5
     else:
         raise NotImplementedError("No telegram parser found for version: %s",
                                   dsmr_version)
 
-    protocol = partial(DSMRProtocol, loop, TelegramParser(specification),
+    protocol = partial(protocol, loop, TelegramParser(specification),
                        telegram_callback=telegram_callback, **kwargs)
 
     return protocol, serial_settings
@@ -143,7 +158,7 @@ class DSMRProtocol(asyncio.Protocol):
         try:
             parsed_telegram = self.telegram_parser.parse(telegram)
         except InvalidChecksumError as e:
-            self.log.warning(str(e))
+            self.log.info(str(e))
         except ParseError:
             self.log.exception("failed to parse telegram")
         else:

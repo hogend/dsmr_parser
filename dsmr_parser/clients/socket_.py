@@ -4,7 +4,6 @@ import socket
 from dsmr_parser.clients.telegram_buffer import TelegramBuffer
 from dsmr_parser.exceptions import ParseError, InvalidChecksumError
 from dsmr_parser.parsers import TelegramParser
-from dsmr_parser.objects import Telegram
 
 
 logger = logging.getLogger(__name__)
@@ -22,7 +21,6 @@ class SocketReader(object):
         self.telegram_buffer = TelegramBuffer()
         self.telegram_specification = telegram_specification
 
-
     def read(self):
         """
         Read complete DSMR telegram's from remote interface and parse it
@@ -33,11 +31,15 @@ class SocketReader(object):
         buffer = b""
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as socket_handle:
-
+            socket_handle.settimeout(60)
             socket_handle.connect((self.host, self.port))
 
             while True:
-                buffer += socket_handle.recv(self.BUFFER_SIZE)
+                try:
+                    buffer += socket_handle.recv(self.BUFFER_SIZE)
+                except socket.timeout:
+                    logger.error("Socket timeout occurred, exiting")
+                    break
 
                 lines = buffer.splitlines(keepends=True)
 
@@ -45,13 +47,18 @@ class SocketReader(object):
                     continue
 
                 for data in lines:
-                    self.telegram_buffer.append(data.decode('ascii'))
+                    try:
+                        self.telegram_buffer.append(data.decode('ascii'))
+                    except UnicodeDecodeError:
+                        # Some garbage came through the channel
+                        # E.g.: Happens at EON_HUNGARY, but only once at the start of the socket.
+                        logger.error('Failed to parse telegram due to unicode decode error')
 
                 for telegram in self.telegram_buffer.get_all():
                     try:
                         yield self.telegram_parser.parse(telegram)
                     except InvalidChecksumError as e:
-                        logger.warning(str(e))
+                        logger.info(str(e))
                     except ParseError as e:
                         logger.error('Failed to parse telegram: %s', e)
 
@@ -82,7 +89,7 @@ class SocketReader(object):
 
                     for telegram in self.telegram_buffer.get_all():
                         try:
-                            yield Telegram(telegram, self.telegram_parser, self.telegram_specification)
+                            yield self.telegram_parser.parse(telegram)
                         except InvalidChecksumError as e:
                             logger.warning(str(e))
                         except ParseError as e:

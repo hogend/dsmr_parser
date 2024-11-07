@@ -1,11 +1,10 @@
 import logging
 import serial
-import serial_asyncio
+import serial_asyncio_fast
 
 from dsmr_parser.clients.telegram_buffer import TelegramBuffer
 from dsmr_parser.exceptions import ParseError, InvalidChecksumError
 from dsmr_parser.parsers import TelegramParser
-from dsmr_parser.objects import Telegram
 
 
 logger = logging.getLogger(__name__)
@@ -38,7 +37,7 @@ class SerialReader(object):
                     try:
                         yield self.telegram_parser.parse(telegram)
                     except InvalidChecksumError as e:
-                        logger.warning(str(e))
+                        logger.info(str(e))
                     except ParseError as e:
                         logger.error('Failed to parse telegram: %s', e)
 
@@ -55,7 +54,7 @@ class SerialReader(object):
 
                 for telegram in self.telegram_buffer.get_all():
                     try:
-                        yield Telegram(telegram, self.telegram_parser, self.telegram_specification)
+                        yield self.telegram_parser.parse(telegram)
                     except InvalidChecksumError as e:
                         logger.warning(str(e))
                     except ParseError as e:
@@ -78,7 +77,7 @@ class AsyncSerialReader(SerialReader):
         :rtype: None
         """
         # create Serial StreamReader
-        conn = serial_asyncio.open_serial_connection(**self.serial_settings)
+        conn = serial_asyncio_fast.open_serial_connection(**self.serial_settings)
         reader, _ = await conn
 
         while True:
@@ -95,3 +94,35 @@ class AsyncSerialReader(SerialReader):
                     )
                 except ParseError as e:
                     logger.warning('Failed to parse telegram: %s', e)
+
+    async def read_as_object(self, queue):
+        """
+        Read complete DSMR telegram's from the serial interface
+        and return a Telegram object.
+
+        Instead of being a generator, Telegram objects are pushed
+        to provided queue for asynchronous processing.
+
+        :rtype: None
+        """
+
+        # create Serial StreamReader
+        conn = serial_asyncio_fast.open_serial_connection(**self.serial_settings)
+        reader, _ = await conn
+
+        while True:
+
+            # Read line if available or give control back to loop until new
+            # data has arrived.
+            data = await reader.readline()
+            self.telegram_buffer.append(data.decode('ascii'))
+
+            for telegram in self.telegram_buffer.get_all():
+                try:
+                    queue.put_nowait(
+                        self.telegram_parser.parse(telegram)
+                    )
+                except InvalidChecksumError as e:
+                    logger.warning(str(e))
+                except ParseError as e:
+                    logger.error('Failed to parse telegram: %s', e)
