@@ -1,5 +1,4 @@
 dlms_cosem==21.3.2
 pyserial>=3,<4
-pyserial-asyncio<1
 pytz
-serial_asyncio_fast
+pyserial_asyncio_fast
