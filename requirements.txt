@@ -1,5 +1,5 @@
 dlms_cosem==21.3.2
 pyserial>=3,<4
 pytz
-pyserial_asyncio_fast
+pyserial-asyncio-fast
 tailer
